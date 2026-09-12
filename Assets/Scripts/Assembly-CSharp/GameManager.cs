@@ -6,581 +6,754 @@ using UnityEngine;
 
 public class GameManager : MonoBehaviour
 {
-	public static GameManager Instance;
+    public static GameManager Instance;
 
-	public string SavePath;
+    public string SavePath;
+    public string lastSavePath;
+    public bool isOnline;
+    public bool isAndroid;
+    public string VersionCode = "0.7";
+    public string HostName;
 
-	public string lastSavePath;
+    public UserSave LocalPlayerSave;
+    public LvSeries CurrLvSeries;
+    public StatsAndAcvSave StatsAcvSave;
 
-	public bool isOnline;
+    public static char[] keyChars =
+    {
+        's', 'm', 'a', 'r', 't', 'f', 'a', 'l', 'c', 'o', 'n'
+    };
 
-	public bool isAndroid;
+    public GameConf GameConf { get; private set; }
+    public AudioConf AudioConf { get; private set; }
 
-	public string VersionCode = "0.7";
+    public bool isServer =>
+        isOnline &&
+        SocketServer.Instance != null &&
+        SocketServer.Instance.isServerOpen;
 
-	public string HostName;
+    public bool isClient =>
+        isOnline &&
+        SocketServer.Instance != null &&
+        !SocketServer.Instance.isServerOpen;
 
-	public UserSave LocalPlayerSave;
+    public MapStoneBase SelectedStone =>
+        SelectMap.Instance.SelectedStone;
 
-	public LvSeries CurrLvSeries;
+    public static string Encrypt(string data)
+    {
+        if (string.IsNullOrEmpty(data))
+            return data;
 
-	public StatsAndAcvSave StatsAcvSave;
+        char[] chars = data.ToCharArray();
 
-	public static char[] keyChars = new char[11]
-	{
-		's', 'm', 'a', 'r', 't', 'f', 'a', 'l', 'c', 'o',
-		'n'
-	};
+        for (int i = 0; i < chars.Length; i++)
+        {
+            chars[i] = (char)(chars[i] ^ keyChars[i % keyChars.Length]);
+        }
 
-	public GameConf GameConf { get; private set; }
+        return new string(chars);
+    }
 
-	public AudioConf AudioConf { get; private set; }
+    public static string Decrypt(string data)
+    {
+        return Encrypt(data);
+    }
 
-	public bool isServer
-	{
-		get
-		{
-			if (isOnline)
-			{
-				return SocketServer.Instance.isServerOpen;
-			}
-			return false;
-		}
-	}
+    private void Awake()
+    {
+        if (Instance != null)
+        {
+            Destroy(gameObject);
+            return;
+        }
 
-	public bool isClient
-	{
-		get
-		{
-			if (isOnline)
-			{
-				return !SocketServer.Instance.isServerOpen;
-			}
-			return false;
-		}
-	}
+        Instance = this;
 
-	public MapStoneBase SelectedStone => SelectMap.Instance.SelectedStone;
+        GameConf = Resources.Load<GameConf>("GameConf");
+        AudioConf = Resources.Load<AudioConf>("AudioConf");
 
-	public static string Encrypt(string data)
-	{
-		char[] array = data.ToCharArray();
-		for (int i = 0; i < array.Length; i++)
-		{
-			char num = array[i];
-			char c = keyChars[i % keyChars.Length];
-			char c2 = (char)(num ^ c);
-			array[i] = c2;
-		}
-		return new string(array);
-	}
+        SavePath = Application.persistentDataPath + "/saves";
 
-	public static string Decrypt(string data)
-	{
-		return Encrypt(data);
-	}
+        DontDestroyOnLoad(gameObject);
+    }
 
-	private void Awake()
-	{
-		if (Instance == null)
-		{
-			Instance = this;
-			GameConf = Resources.Load<GameConf>("GameConf");
-			AudioConf = Resources.Load<AudioConf>("AudioConf");
-			SavePath = Application.persistentDataPath + "/saves";
-			Object.DontDestroyOnLoad(base.gameObject);
-		}
-		else
-		{
-			Object.Destroy(base.gameObject);
-		}
-	}
+    private void Start()
+    {
+        if (isAndroid)
+            Screen.SetResolution(1920, 1080, false);
 
-	private void Start()
-	{
-		if (isAndroid)
-		{
-			Screen.SetResolution(1920, 1080, fullscreen: false);
-		}
-		LoadSetting();
-		bool flag = false;
-		if (lastSavePath != null && File.Exists(lastSavePath + "/" + FixedInfo.PlayerInfoName))
-		{
-			StreamReader streamReader = new StreamReader(lastSavePath + "/" + FixedInfo.PlayerInfoName);
-			string json = Decrypt(streamReader.ReadToEnd());
-			streamReader.Close();
-			if (MyTool.TryParseJson<UserSave>(json, out var result))
-			{
-				LoadSave(result, lastSavePath);
-				flag = true;
-			}
-		}
-		if (!flag)
-		{
-			if (!Directory.Exists(SavePath))
-			{
-				Directory.CreateDirectory(SavePath);
-			}
-			DirectoryInfo[] directories = new DirectoryInfo(SavePath).GetDirectories();
-			for (int i = 0; i < directories.Length; i++)
-			{
-				if (File.Exists(directories[i]?.ToString() + "/" + FixedInfo.PlayerInfoName))
-				{
-					StreamReader streamReader2 = new StreamReader(directories[i]?.ToString() + "/" + FixedInfo.PlayerInfoName);
-					string json2 = Decrypt(streamReader2.ReadToEnd());
-					streamReader2.Close();
-					if (MyTool.TryParseJson<UserSave>(json2, out var result2))
-					{
-						LoadSave(result2, directories[i].ToString());
-						flag = true;
-						break;
-					}
-				}
-			}
-		}
-		if (!flag)
-		{
-			ChooseSave.Instance.AddUser.Display(canCancel: false);
-		}
-		StatsManager.Instance.AddStatsNum(StatsEnum.GameOpenNum);
-	}
+        LoadSetting();
 
-	private void FirstLoadLvSeries()
-	{
-		int num = LocalPlayerSave.LastAdventureId / 10000;
-		if (num > 0 && num <= SelectMap.Instance.Stones.Count)
-		{
-			SelectMap.Instance.Stones[num - 1].SelectThis();
-			LoadLvInfo(num);
-		}
-		else
-		{
-			SelectMap.Instance.Stones[0].SelectThis();
-			LoadLvInfo(1);
-		}
-		LevelSelector.Instance.LoadLastLv();
-	}
+        bool loaded = false;
 
-	public void LoadSave(UserSave saveUser, string loadingPath)
-	{
-		if (lastSavePath != loadingPath)
-		{
-			lastSavePath = loadingPath;
-			SaveSetting();
-		}
-		LocalPlayerSave = saveUser;
-		ChatInput.Instance.ResetAllCmd();
-		if (!LocalPlayerSave.UnlockedPlants.Contains(PlantType.PeaShooter))
-		{
-			LocalPlayerSave.UnlockedPlants.Add(PlantType.PeaShooter);
-		}
-		if (!LocalPlayerSave.UnlockedPlants.Contains(PlantType.SunFlower))
-		{
-			LocalPlayerSave.UnlockedPlants.Add(PlantType.SunFlower);
-		}
-		if (LocalPlayerSave.CardSlotNum < 6)
-		{
-			LocalPlayerSave.CardSlotNum = 6;
-		}
-		if (LocalPlayerSave.LastAdventureId <= 10000)
-		{
-			LocalPlayerSave.LastAdventureId = 10001;
-		}
-		if (LocalPlayerSave.LastMiniGameId <= 11000)
-		{
-			LocalPlayerSave.LastMiniGameId = 11001;
-		}
-		if (LocalPlayerSave.LastPuzzleId <= 12000)
-		{
-			LocalPlayerSave.LastPuzzleId = 12001;
-		}
-		if (LocalPlayerSave.MoreOptions.Count <= 0)
-		{
-			for (int i = 0; i < 10; i++)
-			{
-				LocalPlayerSave.MoreOptions.Add(item: false);
-			}
-		}
-		PlayerManager.Instance.ReadSave(LocalPlayerSave.MoneyNum);
-		StartSceneManager.Instance.changeUser.NameText.text = saveUser.playerName + "!";
-		UIManager.Instance.SetPanel.MoreOptionRead(LocalPlayerSave.MoreOptions, LocalPlayerSave.OpenQuickChat, LocalPlayerSave.QuickChat);
-		SeedBank.Instance.LastSelectCard = LocalPlayerSave.LastSelectedCard;
-		SaveUserInfo();
-		StartSceneManager.Instance.LoadStartScence(PlayAnim: false);
-		FirstLoadLvSeries();
-		bool flag = false;
-		if (File.Exists(lastSavePath + "/" + FixedInfo.SAAInfo))
-		{
-			StreamReader streamReader = new StreamReader(lastSavePath + "/" + FixedInfo.SAAInfo);
-			string json = Decrypt(streamReader.ReadToEnd());
-			streamReader.Close();
-			if (MyTool.TryParseJson<StatsAndAcvSave>(json, out var result))
-			{
-				flag = true;
-				StatsAcvSave = result;
-			}
-		}
-		if (!flag)
-		{
-			StatsAcvSave = new StatsAndAcvSave();
-		}
-		StatsManager.Instance.LoadStatsSave();
-		AcvmentManager.Instance.LoadAcvSave();
-		if (LocalPlayerSave.UnlockedPlants.Count >= 49)
-		{
-			AcvmentManager.Instance.GetAchievement(Acvname.Plant49);
-		}
-	}
+        if (!string.IsNullOrEmpty(lastSavePath))
+        {
+            string file = lastSavePath + "/" + FixedInfo.PlayerInfoName;
 
-	public void SaveUserInfo()
-	{
-		LocalPlayerSave.MoneyNum = PlayerManager.Instance.Money;
-		LocalPlayerSave.VersionCode = VersionCode;
-		LocalPlayerSave.MoreOptions.Clear();
-		LocalPlayerSave.MoreOptions.Add(GobalLight.Instance.LightingNotDark);
-		LocalPlayerSave.MoreOptions.Add(SeedBank.Instance.IsCdDown);
-		LocalPlayerSave.MoreOptions.Add(PlayerManager.Instance.NormalSunUp);
-		LocalPlayerSave.MoreOptions.Add(PlayerManager.Instance.GetSunUp);
-		LocalPlayerSave.MoreOptions.Add(SkyManager.Instance.SlowSunAutoCollect);
-		LocalPlayerSave.LastSelectedCard = new List<CardType>(SeedBank.Instance.LastSelectCard);
-		LocalPlayerSave.OpenQuickChat = UIManager.Instance.SetPanel.OpenQuickChat;
-		LocalPlayerSave.QuickChat.Clear();
-		LocalPlayerSave.QuickChat.Add(UIManager.Instance.SetPanel.QuickChat1.text);
-		LocalPlayerSave.QuickChat.Add(UIManager.Instance.SetPanel.QuickChat2.text);
-		LocalPlayerSave.QuickChat.Add(UIManager.Instance.SetPanel.QuickChat3.text);
-		string value = Encrypt(JsonUtility.ToJson(LocalPlayerSave));
-		StreamWriter streamWriter = new StreamWriter(lastSavePath + "/" + FixedInfo.PlayerInfoName);
-		streamWriter.Write(value);
-		streamWriter.Close();
-	}
+            if (File.Exists(file) &&
+                MyTool.TryParseJson<UserSave>(
+                    Decrypt(File.ReadAllText(file)),
+                    out var save))
+            {
+                LoadSave(save, lastSavePath);
+                loaded = true;
+            }
+        }
 
-	public void SaveSAInfo()
-	{
-		string value = Encrypt(JsonUtility.ToJson(StatsAcvSave));
-		StreamWriter streamWriter = new StreamWriter(lastSavePath + "/" + FixedInfo.SAAInfo);
-		streamWriter.Write(value);
-		streamWriter.Close();
-	}
+        if (!loaded)
+        {
+            if (!Directory.Exists(SavePath))
+                Directory.CreateDirectory(SavePath);
 
-	public void AddNewPlant(PlantType plantType)
-	{
-		if (plantType != PlantType.Nope && !new List<PlantType>
-		{
-			PlantType.MoonTombStone,
-			PlantType.RepeaterReverse,
-			PlantType.ExplodeNut,
-			PlantType.HugeNut
-		}.Contains(plantType) && !LocalPlayerSave.UnlockedPlants.Contains(plantType))
-		{
-			LocalPlayerSave.UnlockedPlants.Add(plantType);
-			SaveUserInfo();
-			if (LocalPlayerSave.UnlockedPlants.Count >= 49)
-			{
-				AcvmentManager.Instance.GetAchievement(Acvname.Plant49);
-			}
-		}
-	}
+            foreach (DirectoryInfo dir in new DirectoryInfo(SavePath).GetDirectories())
+            {
+                string file = dir.FullName + "/" + FixedInfo.PlayerInfoName;
 
-	public LvSave GetLvSave(int LVid)
-	{
-		int num = LVid / 10000;
-		int num2 = CurrLvSeries.LvSaves[0].LvId / 10000;
-		if (num != num2)
-		{
-			LoadLvInfo(num);
-		}
-		List<LvSave> lvSaves = GetLvSaves(LV.Instance.CurrLvId);
-		for (int i = 0; i < lvSaves.Count; i++)
-		{
-			if (lvSaves[i].LvId == LVid)
-			{
-				return lvSaves[i];
-			}
-		}
-		return null;
-	}
+                if (!File.Exists(file))
+                    continue;
 
-	public void LoadLvInfo(int SeriesId)
-	{
-		bool flag = false;
-		if (lastSavePath != null && File.Exists(lastSavePath + "/Wsave" + SeriesId + ".smf"))
-		{
-			StreamReader streamReader = new StreamReader(lastSavePath + "/Wsave" + SeriesId + ".smf");
-			string json = Decrypt(streamReader.ReadToEnd());
-			streamReader.Close();
-			if (MyTool.TryParseJson<LvSeries>(json, out var result))
-			{
-				flag = true;
-				CurrLvSeries = result;
-				if (CurrLvSeries.LvSaves.Count < SelectMap.Instance.SelectedStone.AdventureLvNum)
-				{
-					int count = CurrLvSeries.LvSaves.Count;
-					int num = SelectMap.Instance.SelectedStone.AdventureLvNum - CurrLvSeries.LvSaves.Count;
-					for (int i = 0; i < num; i++)
-					{
-						LvSave lvSave = new LvSave();
-						lvSave.LvId = SeriesId * 10000 + 1 + i + count;
-						CurrLvSeries.LvSaves.Add(lvSave);
-					}
-				}
-				if (CurrLvSeries.LvSavesMiniGame.Count < SelectMap.Instance.SelectedStone.MiniGameLvNum)
-				{
-					int count2 = CurrLvSeries.LvSavesMiniGame.Count;
-					int num2 = SelectMap.Instance.SelectedStone.MiniGameLvNum - CurrLvSeries.LvSavesMiniGame.Count;
-					for (int j = 0; j < num2; j++)
-					{
-						LvSave lvSave2 = new LvSave();
-						lvSave2.LvId = SeriesId * 11000 + 1 + j + count2;
-						CurrLvSeries.LvSavesMiniGame.Add(lvSave2);
-					}
-				}
-				while (CurrLvSeries.LvSavesMiniGame.Count > SelectMap.Instance.SelectedStone.MiniGameLvNum)
-				{
-					CurrLvSeries.LvSavesMiniGame.RemoveAt(CurrLvSeries.LvSavesMiniGame.Count - 1);
-				}
-				if (CurrLvSeries.LvSavesPuzzle.Count < SelectMap.Instance.SelectedStone.PuzzleLvNum)
-				{
-					int count3 = CurrLvSeries.LvSavesPuzzle.Count;
-					int num3 = SelectMap.Instance.SelectedStone.PuzzleLvNum - CurrLvSeries.LvSavesPuzzle.Count;
-					for (int k = 0; k < num3; k++)
-					{
-						LvSave lvSave3 = new LvSave();
-						lvSave3.LvId = SeriesId * 12000 + 1 + k + count3;
-						CurrLvSeries.LvSavesPuzzle.Add(lvSave3);
-					}
-				}
-			}
-		}
-		if (!flag)
-		{
-			CurrLvSeries = new LvSeries();
-			for (int l = 0; l < SelectMap.Instance.SelectedStone.AdventureLvNum; l++)
-			{
-				LvSave lvSave4 = new LvSave();
-				lvSave4.LvId = SeriesId * 10000 + 1 + l;
-				CurrLvSeries.LvSaves.Add(lvSave4);
-			}
-			for (int m = 0; m < SelectMap.Instance.SelectedStone.MiniGameLvNum; m++)
-			{
-				LvSave lvSave5 = new LvSave();
-				lvSave5.LvId = SeriesId * 11000 + 1 + m;
-				CurrLvSeries.LvSavesMiniGame.Add(lvSave5);
-			}
-			for (int n = 0; n < SelectMap.Instance.SelectedStone.PuzzleLvNum; n++)
-			{
-				LvSave lvSave6 = new LvSave();
-				lvSave6.LvId = SeriesId * 12000 + 1 + n;
-				CurrLvSeries.LvSavesPuzzle.Add(lvSave6);
-			}
-		}
-	}
+                if (MyTool.TryParseJson<UserSave>(
+                    Decrypt(File.ReadAllText(file)),
+                    out var save))
+                {
+                    LoadSave(save, dir.FullName);
+                    loaded = true;
+                    break;
+                }
+            }
+        }
 
-	public void SaveLvInfo(bool saveCurrLv)
-	{
-		Debug.Log(LV.Instance.CurrLvId);
-		List<LvSave> lvSaves = GetLvSaves(LV.Instance.CurrLvId);
-		if (saveCurrLv)
-		{
-			for (int i = 0; i < lvSaves.Count; i++)
-			{
-				if (lvSaves[i].LvId != LV.Instance.CurrLvId)
-				{
-					continue;
-				}
-				if (LV.Instance.IsEasy)
-				{
-					if ((lvSaves[i].PassTime <= 10 || LVManager.Instance.PassTime < lvSaves[i].PassTime) && LVManager.Instance.PassTime > 10)
-					{
-						lvSaves[i].PassTime = LVManager.Instance.PassTime;
-					}
-					lvSaves[i].PassNum++;
-				}
-				else
-				{
-					if ((lvSaves[i].HardPTime <= 10 || LVManager.Instance.PassTime < lvSaves[i].HardPTime) && LVManager.Instance.PassTime > 10)
-					{
-						lvSaves[i].HardPTime = LVManager.Instance.PassTime;
-					}
-					lvSaves[i].HardPNum++;
-				}
-				break;
-			}
-		}
-		int num = lvSaves[0].LvId / 10000;
-		string value = Encrypt(JsonUtility.ToJson(CurrLvSeries));
-		StreamWriter streamWriter = new StreamWriter(lastSavePath + "/Wsave" + num + ".smf");
-		streamWriter.Write(value);
-		streamWriter.Close();
-	}
+        if (!loaded)
+        {
+            if (ChooseSave.Instance != null &&
+                ChooseSave.Instance.AddUser != null)
+            {
+                ChooseSave.Instance.AddUser.Display(false);
+            }
 
-	private List<LvSave> GetLvSaves(int lvid)
-	{
-		return (lvid % 10000 / 1000) switch
-		{
-			1 => CurrLvSeries.LvSavesMiniGame, 
-			2 => CurrLvSeries.LvSavesPuzzle, 
-			_ => CurrLvSeries.LvSaves, 
-		};
-	}
+            return;
+        }
 
-	private void LoadSetting()
-	{
-		if (File.Exists(SavePath + "/" + FixedInfo.SettingInfoName))
-		{
-			StreamReader streamReader = new StreamReader(SavePath + "/" + FixedInfo.SettingInfoName);
-			string json = streamReader.ReadToEnd();
-			streamReader.Close();
-			if (MyTool.TryParseJson<SettingSave>(json, out var result))
-			{
-				UIManager.Instance.SetPanel.SaveInit(result);
-				lastSavePath = result.lastLoadSavePath;
-				Screen.fullScreen = result.isFullScreen;
-			}
-		}
-	}
+        if (StatsManager.Instance != null)
+        {
+            StatsManager.Instance.AddStatsNum(
+                StatsEnum.GameOpenNum);
+        }
+    }
 
-	public void SaveSetting()
-	{
-		SettingSave obj = new SettingSave
-		{
-			bgmVolume = AudioManager.Instance.BgmVolume,
-			soundVolume = AudioManager.Instance.SoundVolume,
-			lastLoadSavePath = lastSavePath,
-			isFullScreen = Screen.fullScreen,
-			isF1080P = UIManager.Instance.SetPanel.is1080P,
-			isRainFog = SkyManager.Instance.isRainFog,
-			isCardSelector = SeedBank.Instance.CardSelector,
-			FrameType = UIManager.Instance.SetPanel.FrameType,
-			isVsync = UIManager.Instance.SetPanel.isVsync,
-			isDisFrame = UIManager.Instance.SetPanel.isDisFrame
-		};
-		if (!Directory.Exists(SavePath))
-		{
-			Directory.CreateDirectory(SavePath);
-		}
-		string value = JsonUtility.ToJson(obj);
-		StreamWriter streamWriter = new StreamWriter(SavePath + "/" + FixedInfo.SettingInfoName);
-		streamWriter.Write(value);
-		streamWriter.Close();
-	}
+    private void FirstLoadLvSeries()
+    {
+        int series = LocalPlayerSave.LastAdventureId / 10000;
 
-	public List<CustomMapSave> LoadCustomMapFile()
-	{
-		List<CustomMapSave> list = new List<CustomMapSave>();
-		string path = Application.persistentDataPath + "/custom/maps";
-		if (!Directory.Exists(path))
-		{
-			Directory.CreateDirectory(path);
-		}
-		string[] files = Directory.GetFiles(path, "*.cm");
-		while (true)
-		{
-			for (int i = 0; i < files.Length; i++)
-			{
-				if (File.Exists(files[i]))
-				{
-					StreamReader streamReader = new StreamReader(files[i]);
-					string json = Decrypt(streamReader.ReadToEnd());
-					streamReader.Close();
-					if (MyTool.TryParseJson<CustomMapSave>(json, out var result))
-					{
-						CustomMapSave customMapSave = result;
-						customMapSave.SavePath = files[i];
-						list.Add(customMapSave);
-					}
-				}
-			}
-			if (files.Length != 0 && list.Count != 0)
-			{
-				break;
-			}
-			CreateNewCustomMap();
-			files = Directory.GetFiles(path, "*.cm");
-		}
-		return list;
-	}
+        if (series > 0 &&
+            series <= SelectMap.Instance.Stones.Count)
+        {
+            SelectMap.Instance.Stones[series - 1].SelectThis();
+            LoadLvInfo(series);
+        }
+        else
+        {
+            SelectMap.Instance.Stones[0].SelectThis();
+            LoadLvInfo(1);
+        }
 
-	public void CreateNewCustomMap()
-	{
-		string text = Application.persistentDataPath + "/custom/maps";
-		CustomMapSave customMapSave = new CustomMapSave();
-		customMapSave.MapBrief = "一个新的自定义地图";
-		customMapSave.mapType = MapType.CustomYard;
-		customMapSave.VerticalNum = 5;
-		customMapSave.HorizontalNum = 9;
-		for (int i = 0; i < 45; i++)
-		{
-			customMapSave.tileTypes.Add(TileType.Grass);
-		}
-		int num = 0;
-		string text2 = "";
-		while (File.Exists(text + "/newmap" + text2 + ".cm"))
-		{
-			num++;
-			text2 = ((num > 0) ? num.ToString() : "");
-		}
-		customMapSave.MapName = "newmap" + text2;
-		string value = Encrypt(JsonUtility.ToJson(customMapSave));
-		StreamWriter streamWriter = new StreamWriter(text + "/newmap" + text2 + ".cm");
-		streamWriter.Write(value);
-		streamWriter.Close();
-	}
+        LevelSelector.Instance.LoadLastLv();
+    }
 
-	public List<CustomLevelSave> LoadCustomLevelFile()
-	{
-		List<CustomLevelSave> list = new List<CustomLevelSave>();
-		string path = Application.persistentDataPath + "/custom/levels";
-		if (!Directory.Exists(path))
-		{
-			Directory.CreateDirectory(path);
-		}
-		string[] files = Directory.GetFiles(path, "*.clv");
-		while (true)
-		{
-			for (int i = 0; i < files.Length; i++)
-			{
-				if (File.Exists(files[i]))
-				{
-					StreamReader streamReader = new StreamReader(files[i]);
-					string json = Decrypt(streamReader.ReadToEnd());
-					streamReader.Close();
-					if (MyTool.TryParseJson<CustomLevelSave>(json, out var result))
-					{
-						CustomLevelSave customLevelSave = result;
-						customLevelSave.SavePath = files[i];
-						list.Add(customLevelSave);
-					}
-				}
-			}
-			if (files.Length != 0 && list.Count != 0)
-			{
-				break;
-			}
-			CreateNewCustomLv();
-			files = Directory.GetFiles(path, "*.clv");
-		}
-		return list;
-	}
+    public void LoadSave(UserSave save, string path)
+    {
+        if (save == null)
+            return;
 
-	public void CreateNewCustomLv()
-	{
-		string text = Application.persistentDataPath + "/custom/levels";
-		CustomLevelSave customLevelSave = new CustomLevelSave();
-		customLevelSave.LvBrief = "一个新的自定义关卡";
-		customLevelSave.lVType = LVType.Normal;
-		customLevelSave.series = MapSeries.Yard;
-		customLevelSave.mapTypes = new List<MapType> { MapType.FrontYard };
-		int num = 0;
-		string text2 = "";
-		while (File.Exists(text + "/newlv" + text2 + ".clv"))
-		{
-			num++;
-			text2 = ((num > 0) ? num.ToString() : "");
-		}
-		customLevelSave.LvName = "newlv" + text2;
-		string value = Encrypt(JsonUtility.ToJson(customLevelSave));
-		StreamWriter streamWriter = new StreamWriter(text + "/newlv" + text2 + ".clv");
-		streamWriter.Write(value);
-		streamWriter.Close();
-	}
+        if (lastSavePath != path)
+        {
+            lastSavePath = path;
+            SaveSetting();
+        }
+
+        LocalPlayerSave = save;
+
+        if (ChatInput.Instance != null)
+            ChatInput.Instance.ResetAllCmd();
+
+        if (!LocalPlayerSave.UnlockedPlants.Contains(PlantType.PeaShooter))
+            LocalPlayerSave.UnlockedPlants.Add(PlantType.PeaShooter);
+
+        if (!LocalPlayerSave.UnlockedPlants.Contains(PlantType.SunFlower))
+            LocalPlayerSave.UnlockedPlants.Add(PlantType.SunFlower);
+
+        if (LocalPlayerSave.CardSlotNum < 6)
+            LocalPlayerSave.CardSlotNum = 6;
+
+        if (LocalPlayerSave.LastAdventureId <= 10000)
+            LocalPlayerSave.LastAdventureId = 10001;
+
+        if (LocalPlayerSave.LastMiniGameId <= 11000)
+            LocalPlayerSave.LastMiniGameId = 11001;
+
+        if (LocalPlayerSave.LastPuzzleId <= 12000)
+            LocalPlayerSave.LastPuzzleId = 12001;
+
+        if (LocalPlayerSave.MoreOptions.Count == 0)
+        {
+            for (int i = 0; i < 10; i++)
+                LocalPlayerSave.MoreOptions.Add(false);
+        }
+
+        if (PlayerManager.Instance != null)
+        {
+            PlayerManager.Instance.ReadSave(
+                LocalPlayerSave.MoneyNum);
+        }
+
+        if (StartSceneManager.Instance != null &&
+            StartSceneManager.Instance.changeUser != null &&
+            StartSceneManager.Instance.changeUser.NameText != null)
+        {
+            StartSceneManager.Instance.changeUser.NameText.text =
+                LocalPlayerSave.playerName + "!";
+        }
+
+        if (UIManager.Instance != null &&
+            UIManager.Instance.SetPanel != null)
+        {
+            UIManager.Instance.SetPanel.MoreOptionRead(
+                LocalPlayerSave.MoreOptions,
+                LocalPlayerSave.OpenQuickChat,
+                LocalPlayerSave.QuickChat);
+        }
+
+        if (SeedBank.Instance != null)
+        {
+            SeedBank.Instance.LastSelectCard =
+                LocalPlayerSave.LastSelectedCard;
+        }
+
+        SaveUserInfo();
+
+        if (StartSceneManager.Instance != null)
+        {
+            StartSceneManager.Instance.LoadStartScence(false);
+        }
+
+        FirstLoadLvSeries();
+
+        string file = lastSavePath + "/" + FixedInfo.SAAInfo;
+
+        if (File.Exists(file) &&
+            MyTool.TryParseJson<StatsAndAcvSave>(
+                Decrypt(File.ReadAllText(file)),
+                out var stats))
+        {
+            StatsAcvSave = stats;
+        }
+        else
+        {
+            StatsAcvSave = new StatsAndAcvSave();
+        }
+
+        if (StatsManager.Instance != null)
+        {
+            StatsManager.Instance.LoadStatsSave();
+        }
+
+        if (AcvmentManager.Instance != null)
+        {
+            AcvmentManager.Instance.LoadAcvSave();
+        }
+
+        if (LocalPlayerSave.UnlockedPlants.Count >= 49 &&
+            AcvmentManager.Instance != null)
+        {
+            AcvmentManager.Instance.GetAchievement(
+                Acvname.Plant49);
+        }
+    }
+
+    public void SaveUserInfo()
+    {
+        if (LocalPlayerSave == null)
+            return;
+
+        LocalPlayerSave.MoneyNum =
+            PlayerManager.Instance.Money;
+
+        LocalPlayerSave.VersionCode =
+            VersionCode;
+
+        LocalPlayerSave.MoreOptions.Clear();
+
+        LocalPlayerSave.MoreOptions.Add(
+            GobalLight.Instance.LightingNotDark);
+
+        LocalPlayerSave.MoreOptions.Add(
+            SeedBank.Instance.IsCdDown);
+
+        LocalPlayerSave.MoreOptions.Add(
+            PlayerManager.Instance.NormalSunUp);
+
+        LocalPlayerSave.MoreOptions.Add(
+            PlayerManager.Instance.GetSunUp);
+
+        LocalPlayerSave.MoreOptions.Add(
+            SkyManager.Instance.SlowSunAutoCollect);
+
+        LocalPlayerSave.LastSelectedCard =
+            new List<CardType>(
+                SeedBank.Instance.LastSelectCard);
+
+        LocalPlayerSave.OpenQuickChat =
+            UIManager.Instance.SetPanel.OpenQuickChat;
+
+        LocalPlayerSave.QuickChat.Clear();
+
+        LocalPlayerSave.QuickChat.Add(
+            UIManager.Instance.SetPanel.QuickChat1.text);
+
+        LocalPlayerSave.QuickChat.Add(
+            UIManager.Instance.SetPanel.QuickChat2.text);
+
+        LocalPlayerSave.QuickChat.Add(
+            UIManager.Instance.SetPanel.QuickChat3.text);
+
+        if (!Directory.Exists(lastSavePath))
+            Directory.CreateDirectory(lastSavePath);
+
+        File.WriteAllText(
+            lastSavePath + "/" + FixedInfo.PlayerInfoName,
+            Encrypt(JsonUtility.ToJson(LocalPlayerSave)));
+    }
+
+    public void SaveSAInfo()
+    {
+        if (StatsAcvSave == null ||
+            string.IsNullOrEmpty(lastSavePath))
+            return;
+
+        File.WriteAllText(
+            lastSavePath + "/" + FixedInfo.SAAInfo,
+            Encrypt(JsonUtility.ToJson(StatsAcvSave)));
+    }
+
+    public void AddNewPlant(PlantType plantType)
+    {
+        if (LocalPlayerSave == null)
+            return;
+
+        if (plantType == PlantType.Nope ||
+            plantType == PlantType.MoonTombStone ||
+            plantType == PlantType.RepeaterReverse ||
+            plantType == PlantType.ExplodeNut ||
+            plantType == PlantType.HugeNut ||
+            LocalPlayerSave.UnlockedPlants.Contains(plantType))
+        {
+            return;
+        }
+
+        LocalPlayerSave.UnlockedPlants.Add(plantType);
+
+        SaveUserInfo();
+
+        if (LocalPlayerSave.UnlockedPlants.Count >= 49 &&
+            AcvmentManager.Instance != null)
+        {
+            AcvmentManager.Instance.GetAchievement(
+                Acvname.Plant49);
+        }
+    }
+
+    public LvSave GetLvSave(int LVid)
+    {
+        if (CurrLvSeries == null ||
+            CurrLvSeries.LvSaves == null ||
+            CurrLvSeries.LvSaves.Count == 0)
+        {
+            return null;
+        }
+
+        int series = LVid / 10000;
+        int currentSeries =
+            CurrLvSeries.LvSaves[0].LvId / 10000;
+
+        if (series != currentSeries)
+            LoadLvInfo(series);
+
+        foreach (LvSave save in GetLvSaves(LV.Instance.CurrLvId))
+        {
+            if (save.LvId == LVid)
+                return save;
+        }
+
+        return null;
+    }
+
+    public void LoadLvInfo(int SeriesId)
+    {
+        if (SelectMap.Instance == null ||
+            SelectMap.Instance.SelectedStone == null)
+        {
+            return;
+        }
+
+        string file =
+            lastSavePath + "/Wsave" + SeriesId + ".smf";
+
+        bool loaded = false;
+
+        if (File.Exists(file) &&
+            MyTool.TryParseJson<LvSeries>(
+                Decrypt(File.ReadAllText(file)),
+                out var series))
+        {
+            CurrLvSeries = series;
+            loaded = true;
+        }
+
+        if (!loaded)
+            CurrLvSeries = new LvSeries();
+
+        int adventure =
+            SelectMap.Instance.SelectedStone.AdventureLvNum;
+
+        int miniGame =
+            SelectMap.Instance.SelectedStone.MiniGameLvNum;
+
+        int puzzle =
+            SelectMap.Instance.SelectedStone.PuzzleLvNum;
+
+        while (CurrLvSeries.LvSaves.Count < adventure)
+        {
+            CurrLvSeries.LvSaves.Add(
+                new LvSave
+                {
+                    LvId =
+                        SeriesId * 10000 +
+                        CurrLvSeries.LvSaves.Count + 1
+                });
+        }
+
+        while (CurrLvSeries.LvSavesMiniGame.Count < miniGame)
+        {
+            CurrLvSeries.LvSavesMiniGame.Add(
+                new LvSave
+                {
+                    LvId =
+                        SeriesId * 11000 +
+                        CurrLvSeries.LvSavesMiniGame.Count + 1
+                });
+        }
+
+        while (CurrLvSeries.LvSavesPuzzle.Count < puzzle)
+        {
+            CurrLvSeries.LvSavesPuzzle.Add(
+                new LvSave
+                {
+                    LvId =
+                        SeriesId * 12000 +
+                        CurrLvSeries.LvSavesPuzzle.Count + 1
+                });
+        }
+
+        while (CurrLvSeries.LvSavesMiniGame.Count > miniGame)
+        {
+            CurrLvSeries.LvSavesMiniGame.RemoveAt(
+                CurrLvSeries.LvSavesMiniGame.Count - 1);
+        }
+
+        while (CurrLvSeries.LvSavesPuzzle.Count > puzzle)
+        {
+            CurrLvSeries.LvSavesPuzzle.RemoveAt(
+                CurrLvSeries.LvSavesPuzzle.Count - 1);
+        }
+    }
+
+    public void SaveLvInfo(bool saveCurrLv)
+    {
+        if (CurrLvSeries == null ||
+            LV.Instance == null)
+        {
+            return;
+        }
+
+        List<LvSave> saves =
+            GetLvSaves(LV.Instance.CurrLvId);
+
+        if (saves == null || saves.Count == 0)
+            return;
+
+        if (saveCurrLv)
+        {
+            foreach (LvSave save in saves)
+            {
+                if (save.LvId != LV.Instance.CurrLvId)
+                    continue;
+
+                if (LV.Instance.IsEasy)
+                {
+                    if ((save.PassTime <= 10 ||
+                         LVManager.Instance.PassTime < save.PassTime) &&
+                        LVManager.Instance.PassTime > 10)
+                    {
+                        save.PassTime =
+                            LVManager.Instance.PassTime;
+                    }
+
+                    save.PassNum++;
+                }
+                else
+                {
+                    if ((save.HardPTime <= 10 ||
+                         LVManager.Instance.PassTime < save.HardPTime) &&
+                        LVManager.Instance.PassTime > 10)
+                    {
+                        save.HardPTime =
+                            LVManager.Instance.PassTime;
+                    }
+
+                    save.HardPNum++;
+                }
+
+                break;
+            }
+        }
+
+        int series =
+            saves[0].LvId / 10000;
+
+        File.WriteAllText(
+            lastSavePath + "/Wsave" + series + ".smf",
+            Encrypt(JsonUtility.ToJson(CurrLvSeries)));
+    }
+
+    private List<LvSave> GetLvSaves(int lvid)
+    {
+        switch ((lvid % 10000) / 1000)
+        {
+            case 1:
+                return CurrLvSeries.LvSavesMiniGame;
+
+            case 2:
+                return CurrLvSeries.LvSavesPuzzle;
+
+            default:
+                return CurrLvSeries.LvSaves;
+        }
+    }
+
+    private void LoadSetting()
+    {
+        string file =
+            SavePath + "/" + FixedInfo.SettingInfoName;
+
+        if (!File.Exists(file))
+            return;
+
+        if (MyTool.TryParseJson<SettingSave>(
+            File.ReadAllText(file),
+            out var setting))
+        {
+            if (UIManager.Instance != null &&
+                UIManager.Instance.SetPanel != null)
+            {
+                UIManager.Instance.SetPanel.SaveInit(setting);
+            }
+
+            lastSavePath = setting.lastLoadSavePath;
+            Screen.fullScreen = setting.isFullScreen;
+        }
+    }
+
+    public void SaveSetting()
+    {
+        if (!Directory.Exists(SavePath))
+            Directory.CreateDirectory(SavePath);
+
+        SettingSave setting = new SettingSave
+        {
+            bgmVolume =
+                AudioManager.Instance.BgmVolume,
+
+            soundVolume =
+                AudioManager.Instance.SoundVolume,
+
+            lastLoadSavePath =
+                lastSavePath,
+
+            isFullScreen =
+                Screen.fullScreen,
+
+            isF1080P =
+                UIManager.Instance.SetPanel.is1080P,
+
+            isRainFog =
+                SkyManager.Instance.isRainFog,
+
+            isCardSelector =
+                SeedBank.Instance.CardSelector,
+
+            FrameType =
+                UIManager.Instance.SetPanel.FrameType,
+
+            isVsync =
+                UIManager.Instance.SetPanel.isVsync,
+
+            isDisFrame =
+                UIManager.Instance.SetPanel.isDisFrame
+        };
+
+        File.WriteAllText(
+            SavePath + "/" + FixedInfo.SettingInfoName,
+            JsonUtility.ToJson(setting));
+    }
+
+    public List<CustomMapSave> LoadCustomMapFile()
+    {
+        List<CustomMapSave> list =
+            new List<CustomMapSave>();
+
+        string path =
+            Application.persistentDataPath +
+            "/custom/maps";
+
+        if (!Directory.Exists(path))
+            Directory.CreateDirectory(path);
+
+        string[] files =
+            Directory.GetFiles(path, "*.cm");
+
+        foreach (string file in files)
+        {
+            if (!File.Exists(file))
+                continue;
+
+            if (MyTool.TryParseJson<CustomMapSave>(
+                Decrypt(File.ReadAllText(file)),
+                out var map))
+            {
+                map.SavePath = file;
+                list.Add(map);
+            }
+        }
+
+        if (list.Count == 0)
+        {
+            CreateNewCustomMap();
+            return LoadCustomMapFile();
+        }
+
+        return list;
+    }
+
+    public void CreateNewCustomMap()
+    {
+        string path =
+            Application.persistentDataPath +
+            "/custom/maps";
+
+        if (!Directory.Exists(path))
+            Directory.CreateDirectory(path);
+
+        CustomMapSave map = new CustomMapSave
+        {
+            MapBrief = "一个新的自定义地图",
+            mapType = MapType.CustomYard,
+            VerticalNum = 5,
+            HorizontalNum = 9,
+            MapName = "newmap"
+        };
+
+        for (int i = 0; i < 45; i++)
+            map.tileTypes.Add(TileType.Grass);
+
+        int n = 0;
+        string name = map.MapName;
+
+        while (File.Exists(path + "/" + name + ".cm"))
+        {
+            n++;
+            name = "newmap" + n;
+        }
+
+        map.MapName = name;
+
+        File.WriteAllText(
+            path + "/" + name + ".cm",
+            Encrypt(JsonUtility.ToJson(map)));
+    }
+
+    public List<CustomLevelSave> LoadCustomLevelFile()
+    {
+        List<CustomLevelSave> list =
+            new List<CustomLevelSave>();
+
+        string path =
+            Application.persistentDataPath +
+            "/custom/levels";
+
+        if (!Directory.Exists(path))
+            Directory.CreateDirectory(path);
+
+        string[] files =
+            Directory.GetFiles(path, "*.clv");
+
+        foreach (string file in files)
+        {
+            if (!File.Exists(file))
+                continue;
+
+            if (MyTool.TryParseJson<CustomLevelSave>(
+                Decrypt(File.ReadAllText(file)),
+                out var level))
+            {
+                level.SavePath = file;
+                list.Add(level);
+            }
+        }
+
+        if (list.Count == 0)
+        {
+            CreateNewCustomLv();
+            return LoadCustomLevelFile();
+        }
+
+        return list;
+    }
+
+    public void CreateNewCustomLv()
+    {
+        string path =
+            Application.persistentDataPath +
+            "/custom/levels";
+
+        if (!Directory.Exists(path))
+            Directory.CreateDirectory(path);
+
+        CustomLevelSave level = new CustomLevelSave
+        {
+            LvBrief = "一个新的自定义关卡",
+            lVType = LVType.Normal,
+            series = MapSeries.Yard,
+            mapTypes = new List<MapType>
+            {
+                MapType.FrontYard
+            },
+            LvName = "newlv"
+        };
+
+        int n = 0;
+        string name = level.LvName;
+
+        while (File.Exists(path + "/" + name + ".clv"))
+        {
+            n++;
+            name = "newlv" + n;
+        }
+
+        level.LvName = name;
+
+        File.WriteAllText(
+            path + "/" + name + ".clv",
+            Encrypt(JsonUtility.ToJson(level)));
+    }
 }

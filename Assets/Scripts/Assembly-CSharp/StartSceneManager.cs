@@ -2,60 +2,77 @@ using UnityEngine;
 
 public class StartSceneManager : MonoBehaviour
 {
-	public static StartSceneManager Instance;
+    public static StartSceneManager Instance;
 
-	public Animator BackLeft;
+    public Animator BackLeft;
+    public Animator BackCenter;
+    public Animator BackRight;
+    public ChangeUser changeUser;
+    public Transform AlmanacTransform;
+    public Transform StoreTransform;
 
-	public Animator BackCenter;
+    private void Awake()
+    {
+        Instance = this;
+    }
 
-	public Animator BackRight;
+    private void Start()
+    {
+        if (GameManager.Instance != null &&
+            GameManager.Instance.LocalPlayerSave != null)
+        {
+            LoadStartScence(true);
+        }
+    }
 
-	public ChangeUser changeUser;
+    public void LoadStartScence(bool PlayAnim)
+    {
+        if (GameManager.Instance == null ||
+            GameManager.Instance.LocalPlayerSave == null)
+        {
+            return;
+        }
 
-	public Transform AlmanacTransform;
+        if (GameManager.Instance.LocalPlayerSave.StoreLvl > 0)
+        {
+            StoreTransform.localScale = new Vector3(0.6f, 0.6f, 0.6f);
+        }
+        else
+        {
+            StoreTransform.localScale = Vector3.zero;
+        }
 
-	public Transform StoreTransform;
+        if (GameManager.Instance.LocalPlayerSave.AlmanacUnLock)
+        {
+            AlmanacTransform.localScale = new Vector3(0.6f, 0.6f, 0.6f);
+        }
+        else
+        {
+            AlmanacTransform.localScale = Vector3.zero;
+        }
 
-	private void Awake()
-	{
-		Instance = this;
-	}
+        if (PlayAnim)
+        {
+            BackLeft.Play("", 0, 0f);
+            BackCenter.Play("", 0, 0f);
+            BackRight.Play("", 0, 0f);
+            changeUser.PlayAnimation();
+        }
+    }
 
-	private void Start()
-	{
-		LoadStartScence(PlayAnim: true);
-	}
+    public void GoEndLess()
+    {
+        AudioManager.Instance.PlayEFAudio(
+            GameManager.Instance.AudioConf.ButtonClick,
+            transform.position,
+            isAll: true
+        );
 
-	public void LoadStartScence(bool PlayAnim)
-	{
-		if (GameManager.Instance.LocalPlayerSave.StoreLvl > 0)
-		{
-			StoreTransform.localScale = new Vector3(0.6f, 0.6f);
-		}
-		else
-		{
-			StoreTransform.localScale = Vector3.zero;
-		}
-		if (GameManager.Instance.LocalPlayerSave.AlmanacUnLock)
-		{
-			AlmanacTransform.localScale = new Vector3(0.6f, 0.6f);
-		}
-		else
-		{
-			AlmanacTransform.localScale = Vector3.zero;
-		}
-		if (PlayAnim)
-		{
-			BackLeft.Play("", 0, 0f);
-			BackCenter.Play("", 0, 0f);
-			BackRight.Play("", 0, 0f);
-			changeUser.PlayAnimation();
-		}
-	}
+        Invoke(nameof(DoGoEndLess), 0.5f);
+    }
 
-	public void GoEndLess()
-	{
-		AudioManager.Instance.PlayEFAudio(GameManager.Instance.AudioConf.ButtonClick, base.transform.position, isAll: true);
-		Invoke("DoGoEndLess", 0.5f);
-	}
+    private void DoGoEndLess()
+    {
+        Debug.Log("Go Endless");
+    }
 }
