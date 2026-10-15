@@ -1,5 +1,7 @@
-Shader "MyBaseShader" {
-	Properties {
+Shader "MyBaseShader"
+{
+	Properties
+	{
 		_MainTex ("Sprite Texture", 2D) = "white" {}
 		_Color ("Tint", Vector) = (1,1,1,1)
 		_GrayScale ("GrayScale", Float) = 1
@@ -7,56 +9,87 @@ Shader "MyBaseShader" {
 		[Toggle] _OpenGray ("OpenGray", Float) = 1
 		[Toggle] _OpenBrightness ("OpenBrightness", Float) = 1
 	}
-	//DummyShaderTextExporter
-	SubShader{
-		Tags { "RenderType"="Opaque" }
-		LOD 200
+
+	SubShader
+	{
+		Tags
+		{
+			"Queue"="Transparent"
+			"RenderType"="Transparent"
+			"IgnoreProjector"="True"
+			"CanUseSpriteAtlas"="True"
+			"PreviewType"="Plane"
+		}
+
+		Cull Off
+		Lighting Off
+		ZWrite Off
+		Blend SrcAlpha OneMinusSrcAlpha
 
 		Pass
 		{
 			HLSLPROGRAM
+
 			#pragma vertex vert
 			#pragma fragment frag
 
-			float4x4 unity_ObjectToWorld;
-			float4x4 unity_MatrixVP;
+			#include "UnityCG.cginc"
+
+			struct VertexInput
+			{
+				float4 vertex : POSITION;
+				float4 color : COLOR;
+				float2 uv : TEXCOORD0;
+			};
+
+			struct VertexOutput
+			{
+				float4 vertex : SV_POSITION;
+				float4 color : COLOR;
+				float2 uv : TEXCOORD0;
+			};
+
+			sampler2D _MainTex;
 			float4 _MainTex_ST;
+			float4 _Color;
 
-			struct Vertex_Stage_Input
-			{
-				float4 pos : POSITION;
-				float2 uv : TEXCOORD0;
-			};
+			float _GrayScale;
+			float _Brightness;
+			float _OpenGray;
+			float _OpenBrightness;
 
-			struct Vertex_Stage_Output
+			VertexOutput vert(VertexInput input)
 			{
-				float2 uv : TEXCOORD0;
-				float4 pos : SV_POSITION;
-			};
+				VertexOutput output;
 
-			Vertex_Stage_Output vert(Vertex_Stage_Input input)
-			{
-				Vertex_Stage_Output output;
-				output.uv = (input.uv.xy * _MainTex_ST.xy) + _MainTex_ST.zw;
-				output.pos = mul(unity_MatrixVP, mul(unity_ObjectToWorld, input.pos));
+				output.vertex = UnityObjectToClipPos(input.vertex);
+				output.uv = TRANSFORM_TEX(input.uv, _MainTex);
+				output.color = input.color * _Color;
+
 				return output;
 			}
 
-			Texture2D<float4> _MainTex;
-			SamplerState sampler_MainTex;
-			float4 _Color;
-
-			struct Fragment_Stage_Input
+			float4 frag(VertexOutput input) : SV_Target
 			{
-				float2 uv : TEXCOORD0;
-			};
+				float4 color = tex2D(_MainTex, input.uv) * input.color;
 
-			float4 frag(Fragment_Stage_Input input) : SV_TARGET
-			{
-				return _MainTex.Sample(sampler_MainTex, input.uv.xy) * _Color;
+				if (_OpenGray > 0.5)
+				{
+					float gray = dot(color.rgb, float3(0.299, 0.587, 0.114));
+					color.rgb = lerp(color.rgb, gray.xxx, saturate(_GrayScale));
+				}
+
+				if (_OpenBrightness > 0.5)
+				{
+					color.rgb *= _Brightness;
+				}
+
+				return color;
 			}
 
 			ENDHLSL
 		}
 	}
+
+	Fallback "Sprites/Default"
 }
